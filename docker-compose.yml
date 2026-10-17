@@ -1,0 +1,95 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: distributed-store-api
+    ports:
+      - "8000:8000"
+    environment:
+      DB_PROVIDER: postgres
+      KATOWICE_DB_HOST: postgres_katowice
+      KATOWICE_DB_PORT: 5432
+      KATOWICE_DB_NAME: sklep_katowice
+      KATOWICE_DB_USER: sklep
+      KATOWICE_DB_PASSWORD: sklep_password
+      KRAKOW_DB_HOST: postgres_krakow
+      KRAKOW_DB_PORT: 5432
+      KRAKOW_DB_NAME: sklep_krakow
+      KRAKOW_DB_USER: sklep
+      KRAKOW_DB_PASSWORD: sklep_password
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+    depends_on:
+      postgres_katowice:
+        condition: service_healthy
+      postgres_krakow:
+        condition: service_healthy
+      seed_database:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  seed_database:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: distributed-store-seed
+    environment:
+      DB_PROVIDER: postgres
+      KATOWICE_DB_HOST: postgres_katowice
+      KATOWICE_DB_PORT: 5432
+      KATOWICE_DB_NAME: sklep_katowice
+      KATOWICE_DB_USER: sklep
+      KATOWICE_DB_PASSWORD: sklep_password
+      KRAKOW_DB_HOST: postgres_krakow
+      KRAKOW_DB_PORT: 5432
+      KRAKOW_DB_NAME: sklep_krakow
+      KRAKOW_DB_USER: sklep
+      KRAKOW_DB_PASSWORD: sklep_password
+    command: ["python", "-m", "backend.seed_database"]
+    depends_on:
+      postgres_katowice:
+        condition: service_healthy
+      postgres_krakow:
+        condition: service_healthy
+    restart: "no"
+
+  postgres_katowice:
+    image: postgres:16-alpine
+    container_name: distributed-store-postgres-katowice
+    environment:
+      POSTGRES_DB: sklep_katowice
+      POSTGRES_USER: sklep
+      POSTGRES_PASSWORD: sklep_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - katowice_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sklep -d sklep_katowice"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  postgres_krakow:
+    image: postgres:16-alpine
+    container_name: distributed-store-postgres-krakow
+    environment:
+      POSTGRES_DB: sklep_krakow
+      POSTGRES_USER: sklep
+      POSTGRES_PASSWORD: sklep_password
+    ports:
+      - "5434:5432"
+    volumes:
+      - krakow_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sklep -d sklep_krakow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  katowice_postgres_data:
+  krakow_postgres_data:
