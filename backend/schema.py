@@ -1,5 +1,3 @@
-"""Schema GraphQL dla sklepu rozproszonego pomiędzy Katowice i Kraków."""
-
 import graphene
 from pony.orm import db_session
 

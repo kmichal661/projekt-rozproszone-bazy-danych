@@ -1,5 +1,3 @@
-"""Mutacje GraphQL zapisujące dane w odpowiednim węźle lub w obu węzłach."""
-
 import graphene
 from pony.orm import db_session
 
