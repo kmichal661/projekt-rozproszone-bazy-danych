@@ -1,48 +1,45 @@
 from __future__ import annotations
 
-from .common import compose, graphql, query_inventory, query_products, wait_for_api
-from .test_catalog import DESCRIPTIONS
+from .common import ComposeClient, GraphQLClient, inventory_query, products_query
+from .config import load_settings
+from .test_catalog import CATALOG
 from .test_models import Measurement, TestResult
 
 
 def run() -> TestResult:
+    settings = load_settings()
+    api = GraphQLClient(settings.graphql_url)
+    compose = ComposeClient(settings)
     measurements: list[Measurement] = []
-    stopped = False
+    krakow_stopped = False
     try:
-        compose("stop", "postgres_krakow")
-        stopped = True
-        measurements.append(_check("po wyłączeniu węzła Kraków"))
+        compose.run("stop", "postgres_krakow")
+        krakow_stopped = True
+        measurements.append(_availability_measurement(api, "podczas awarii Krakowa"))
     finally:
-        if stopped:
-            compose("start", "postgres_krakow")
-            compose("run", "--rm", "seed_database")
-            wait_for_api()
-            measurements.append(_check("po ponownym uruchomieniu węzła Kraków"))
-    description = DESCRIPTIONS["failure"]
-    return TestResult(**description.__dict__, measurements=measurements)
+        if krakow_stopped:
+            compose.run("start", "postgres_krakow")
+            compose.run("run", "--rm", "seed_database")
+            api.wait_until_ready()
+            measurements.append(_availability_measurement(api, "po restarcie Krakowa"))
+    return TestResult(definition=CATALOG["failure"], measurements=measurements)
 
 
-def _check(label: str) -> dict:
-    products, _ = graphql(query_products())
-    katowice, _ = graphql(query_inventory("KATOWICE"))
-    all_inventory, _ = graphql(query_inventory())
-    products_available = not products.get("errors")
-    katowice_available = not katowice.get("errors")
-    all_nodes_available = not all_inventory.get("errors")
+def _availability_measurement(api: GraphQLClient, label: str) -> Measurement:
+    catalog = api.execute(products_query())
+    katowice = api.execute(inventory_query("KATOWICE"))
+    both_nodes = api.execute(inventory_query())
+    success = not catalog.has_errors and not katowice.has_errors
+    errors = [error.get("message") for error in both_nodes.body.get("errors", [])]
     return Measurement(
         variant=label,
-        success=products_available and katowice_available,
+        success=success,
         values={
-            "katalog dostępny": products_available,
-            "Katowice dostępne": katowice_available,
-            "zapytanie do obu węzłów": all_nodes_available,
-            "błędy zapytania obu węzłów": [
-                error.get("message") for error in all_inventory.get("errors", [])
-            ],
+            "katalog dostępny": not catalog.has_errors,
+            "Katowice dostępne": not katowice.has_errors,
+            "oba węzły dostępne": not both_nodes.has_errors,
+            "błędy obu węzłów": errors,
         },
-        conclusion=(
-            "Dane Katowic są dostępne; po restarcie można ponownie odczytać oba węzły."
-            if products_available and katowice_available
-            else "Aplikacja nie zapewniła dostępności danych lokalnego węzła."
-        ),
+        conclusion=("Katowice są dostępne mimo awarii drugiego węzła."
+                    if success else "Awaria Krakowa uniemożliwiła odczyt danych Katowic."),
     )

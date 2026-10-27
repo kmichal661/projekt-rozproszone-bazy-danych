@@ -6,6 +6,8 @@ services:
     container_name: distributed-store-api
     ports:
       - "8000:8000"
+    volumes:
+      - ./Tests/results:/app/Tests/results:ro
     environment:
       DB_PROVIDER: postgres
       KATOWICE_DB_HOST: postgres_katowice
@@ -28,6 +30,29 @@ services:
       seed_database:
         condition: service_completed_successfully
     restart: unless-stopped
+
+  test_runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["tests"]
+    environment:
+      GRAPHQL_URL: http://api:8000/graphql/
+      TEST_KATOWICE_DB_HOST: postgres_katowice
+      TEST_KATOWICE_DB_PORT: 5432
+      TEST_KATOWICE_DB_NAME: sklep_katowice
+      TEST_KRAKOW_DB_HOST: postgres_krakow
+      TEST_KRAKOW_DB_PORT: 5432
+      TEST_KRAKOW_DB_NAME: sklep_krakow
+      TEST_DB_USER: sklep
+      TEST_DB_PASSWORD: sklep_password
+    command: ["python", "-m", "Tests.run_tests", "--skip-failure"]
+    volumes:
+      - ./Tests/results:/app/Tests/results
+    depends_on:
+      api:
+        condition: service_started
+    restart: "no"
 
   seed_database:
     build:

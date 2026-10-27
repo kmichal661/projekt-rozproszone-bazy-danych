@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from .test_response_time import run as run_response_time
-from .test_catalog import DESCRIPTIONS
+from .catalog_benchmark import run_catalog_benchmark
+from .common import GraphQLClient
+from .config import load_settings
+from .data_generator import TestDataRepository
+from .test_catalog import CATALOG
 from .test_models import TestResult
 
 
 def run() -> TestResult:
-    result = run_response_time((100, 1000, 10000))
-    result.name = DESCRIPTIONS["scalability"].name
-    result.section = DESCRIPTIONS["scalability"].section
-    result.purpose = DESCRIPTIONS["scalability"].purpose
-    result.method = DESCRIPTIONS["scalability"].method
-    result.expected = DESCRIPTIONS["scalability"].expected
-    return result
+    settings = load_settings()
+    return run_catalog_benchmark(
+        CATALOG["scalability"], GraphQLClient(settings.graphql_url), TestDataRepository(settings)
+    )

@@ -5,7 +5,11 @@ from pathlib import Path
 import uvicorn
 from starlette.applications import Starlette
 from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import FileResponse, JSONResponse
 from starlette_graphene3 import GraphQLApp
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+REPORT_PATH = Path(os.getenv("TEST_REPORT_PATH", PROJECT_ROOT / "Tests" / "results" / "report.html"))
 
 try:
     from .helpers import graphiql
@@ -24,6 +28,14 @@ async def health(request):
     return JSONResponse({"status": "ok", "service": "distributed-store"})
 
 
+async def test_report(request):
+    if not REPORT_PATH.is_file():
+        return JSONResponse(
+            {"detail": "Raport nie został jeszcze wygenerowany."}, status_code=404
+        )
+    return FileResponse(REPORT_PATH, media_type="text/html; charset=utf-8")
+
+
 app = Starlette(
     debug=os.getenv("DEBUG", "false").lower() == "true",
 )
@@ -34,6 +46,7 @@ app.mount(
 )
 
 app.add_route("/health", health, methods=["GET"])
+app.add_route("/reports/tests", test_report, methods=["GET"])
 
 app.add_middleware(
     CORSMiddleware,

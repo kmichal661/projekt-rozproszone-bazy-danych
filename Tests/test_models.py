@@ -1,13 +1,22 @@
+"""Small, serialisable domain models shared by every test scenario."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
 @dataclass(frozen=True)
-class Measurement:
-    """Jeden wynik pomiaru lub sprawdzenia."""
+class TestDefinition:
+    section: str
+    name: str
+    purpose: str
+    method: str
+    expected: str
 
+
+@dataclass(frozen=True)
+class Measurement:
     variant: str
     success: bool
     values: dict[str, Any] = field(default_factory=dict)
@@ -16,13 +25,7 @@ class Measurement:
 
 @dataclass
 class TestResult:
-    """Wynik pojedynczego testu wraz z opisem metodologii."""
-
-    section: str
-    name: str
-    purpose: str
-    method: str
-    expected: str
+    definition: TestDefinition
     measurements: list[Measurement] = field(default_factory=list)
     duration_ms: float = 0.0
     error: str | None = None
@@ -33,23 +36,21 @@ class TestResult:
             measurement.success for measurement in self.measurements
         )
 
+    @classmethod
+    def failed(
+        cls, definition: TestDefinition, error: Exception, duration_ms: float
+    ) -> "TestResult":
+        return cls(
+            definition=definition,
+            error=f"{type(error).__name__}: {error}",
+            duration_ms=duration_ms,
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return {
-            "section": self.section,
-            "name": self.name,
-            "purpose": self.purpose,
-            "method": self.method,
-            "expected": self.expected,
+            **asdict(self.definition),
             "success": self.success,
             "duration_ms": round(self.duration_ms, 3),
             "error": self.error,
-            "measurements": [
-                {
-                    "variant": measurement.variant,
-                    "success": measurement.success,
-                    "values": measurement.values,
-                    "conclusion": measurement.conclusion,
-                }
-                for measurement in self.measurements
-            ],
+            "measurements": [asdict(measurement) for measurement in self.measurements],
         }

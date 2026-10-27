@@ -1,7 +1,21 @@
 import graphene
-from pony.orm import db_session
+from pony.orm import db_session, flush
 
 from .models import NODES, get_node
+
+
+def _products_from_all_nodes(sku):
+    """Load a SKU from every catalog replica before a catalog write."""
+    products = []
+    for node in NODES.values():
+        # This query also verifies that the database is reachable.
+        product = node.Product.get(sku=sku)
+        if product is None:
+            raise ValueError(
+                f"Produkt {sku} nie istnieje w wezle {node.name}; katalog jest niespojny"
+            )
+        products.append((node, product))
+    return products
 
 
 class ProductInput(graphene.InputObjectType):
@@ -48,9 +62,17 @@ class CreateProduct(graphene.Mutation):
 
     @staticmethod
     def mutate(root, info, product):
-        first_product = None
-        for node in NODES.values():
-            with db_session:
+        # Check both replicas before any write, then retain one transaction
+        # for every replica so an outage cannot leave a partial catalog.
+        with db_session:
+            for node in NODES.values():
+                if node.Product.get(sku=product["sku"]) is not None:
+                    raise ValueError(
+                        f"Produkt o SKU {product['sku']} juz istnieje w wezle {node.name}"
+                    )
+
+            created_products = []
+            for node in NODES.values():
                 entity = node.Product(
                     sku=product["sku"],
                     name=product["name"],
@@ -58,12 +80,21 @@ class CreateProduct(graphene.Mutation):
                     price=product["price"],
                 )
                 node.Inventory(product=entity, quantity=0)
-                if first_product is None:
-                    first_product = entity
+                created_products.append(entity)
+            flush()
+            first_product = created_products[0]
+            result = ProductPayload(
+                id=first_product.id,
+                sku=first_product.sku,
+                name=first_product.name,
+                description=first_product.description,
+                price=first_product.price,
+                active=first_product.active,
+            )
         return CreateProduct(
             ok=True,
             message="Produkt zapisano w obu węzłach",
-            product=first_product,
+            product=result,
         )
 
 
@@ -114,10 +145,14 @@ class CreateOrder(graphene.Mutation):
             order = selected.Order(customer_name=customer_name, status="NEW", total=0)
             total = 0.0
             for item in items:
+                if item["quantity"] <= 0:
+                    raise ValueError("Ilosc produktu w zamowieniu musi byc dodatnia")
                 product = selected.Product.get(sku=item["sku"])
                 inventory = selected.Inventory.get(product=product) if product else None
                 if product is None or inventory is None:
                     raise ValueError(f"Produkt {item['sku']} nie istnieje w węźle {selected.name}")
+                if not product.active:
+                    raise ValueError(f"Produkt {item['sku']} jest nieaktywny w wezle {selected.name}")
                 if inventory.quantity < item["quantity"]:
                     raise ValueError(f"Brak wystarczającej ilości produktu {item['sku']}")
                 inventory.quantity -= item["quantity"]
@@ -147,11 +182,12 @@ class DeleteProduct(graphene.Mutation):
 
     @staticmethod
     def mutate(root, info, sku):
-        for node in NODES.values():
-            with db_session:
-                product = node.Product.get(sku=sku)
-                if product:
-                    product.active = False
+        # Do all reads before the first update.  Thus an unavailable replica
+        # makes the mutation fail without changing the reachable replica.
+        with db_session:
+            products = _products_from_all_nodes(sku)
+            for _, product in products:
+                product.active = False
         return DeleteProduct(ok=True, message="Produkt oznaczono jako nieaktywny w obu węzłach")
 
 

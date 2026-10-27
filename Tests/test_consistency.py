@@ -2,75 +2,47 @@ from __future__ import annotations
 
 import uuid
 
-from .common import graphql, query_inventory
-from .data_generator import cleanup_generated_data
-from .test_catalog import DESCRIPTIONS
+from .common import GraphQLClient, inventory_query
+from .config import load_settings
+from .data_generator import TestDataRepository
+from .test_catalog import CATALOG
 from .test_models import Measurement, TestResult
 
 
 def run() -> TestResult:
+    settings = load_settings()
+    client = GraphQLClient(settings.graphql_url)
+    repository = TestDataRepository(settings)
     sku = f"CONS-{uuid.uuid4().hex[:10].upper()}"
-    quantity = 777
-    cleanup_generated_data()
-    create_query = f"""
-    mutation {{
-      createProduct(product: {{
-        sku: "{sku}"
-        name: "Produkt spójności"
-        description: "Produkt do testu spójności"
-        price: 12.34
-      }}) {{ ok message }}
-    }}
-    """
-    create_result, _ = graphql(create_query)
-    update_query = f"""
-    mutation {{
-      updateInventory(node: "KATOWICE", sku: "{sku}", quantity: {quantity}) {{
-        ok
-        inventory {{ node sku quantity }}
-      }}
-    }}
-    """
-    update_result, _ = graphql(update_query)
-    katowice_result, _ = graphql(query_inventory("KATOWICE"))
-    krakow_result, _ = graphql(query_inventory("KRAKOW"))
+    expected_quantity = 777
+    repository.cleanup()
+    try:
+        created = client.execute(_create_product_mutation(sku))
+        updated = client.execute(_update_inventory_mutation(sku, expected_quantity))
+        katowice = _quantity_for_sku(client.execute(inventory_query("KATOWICE")), sku)
+        krakow = _quantity_for_sku(client.execute(inventory_query("KRAKOW")), sku)
+        success = not created.has_errors and not updated.has_errors and katowice == expected_quantity and krakow == 0
+        measurement = Measurement(
+            variant="replikacja katalogu i lokalny stan magazynowy",
+            success=success,
+            values={"SKU": sku, "Katowice": katowice, "Kraków": krakow},
+            conclusion=("Katalog został zreplikowany, a stan magazynowy pozostał lokalny."
+                        if success else "Replikacja katalogu lub separacja magazynów nie spełnia oczekiwań."),
+        )
+        return TestResult(definition=CATALOG["consistency"], measurements=[measurement])
+    finally:
+        repository.cleanup()
 
-    katowice_values = [
-        row["quantity"]
-        for row in katowice_result.get("data", {}).get("inventory", [])
-        if row.get("product", {}).get("sku") == sku
-    ]
-    krakow_values = [
-        row["quantity"]
-        for row in krakow_result.get("data", {}).get("inventory", [])
-        if row.get("product", {}).get("sku") == sku
-    ]
-    cleanup_generated_data()
 
-    success = (
-        not create_result.get("errors")
-        and not update_result.get("errors")
-        and quantity in katowice_values
-        and krakow_values == [0]
-    )
-    description = DESCRIPTIONS["consistency"]
-    return TestResult(
-        **description.__dict__,
-        measurements=[
-            Measurement(
-                variant="produkt utworzony i zmieniony w Katowicach",
-                success=success,
-                values={
-                    "SKU": sku,
-                    "Katowice": katowice_values[0] if katowice_values else None,
-                    "Kraków": krakow_values[0] if krakow_values else None,
-                    "katalog w obu bazach": not create_result.get("errors"),
-                },
-                conclusion=(
-                    "Katalog jest replikowany, a stan magazynowy pozostaje lokalny."
-                    if success
-                    else "Nie zachowano oczekiwanej spójności katalogu lub magazynu."
-                ),
-            )
-        ],
-    )
+def _quantity_for_sku(response, sku: str) -> int | None:
+    rows = response.data("inventory", []) or []
+    matches = [row["quantity"] for row in rows if row.get("product", {}).get("sku") == sku]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _create_product_mutation(sku: str) -> str:
+    return f'''mutation {{ createProduct(product: {{ sku: "{sku}", name: "Produkt spójności", description: "Dane tymczasowe", price: 12.34 }}) {{ ok }} }}'''
+
+
+def _update_inventory_mutation(sku: str, quantity: int) -> str:
+    return f'''mutation {{ updateInventory(node: "KATOWICE", sku: "{sku}", quantity: {quantity}) {{ ok }} }}'''

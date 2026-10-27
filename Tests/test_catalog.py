@@ -1,51 +1,32 @@
-from __future__ import annotations
+"""Human-readable definitions of the scenarios included in the report."""
 
-from dataclasses import dataclass
-
-
-@dataclass(frozen=True)
-class TestDescription:
-    section: str
-    name: str
-    purpose: str
-    method: str
-    expected: str
+from .test_models import TestDefinition
 
 
-DESCRIPTIONS = {
-    "response_time": TestDescription(
-        "6.1",
-        "Czas odpowiedzi",
-        "Sprawdzenie wpływu liczby produktów na czas wykonania zapytania GraphQL.",
-        "Generowanie 100, 1 000 i 10 000 produktów, a następnie jednokrotny odczyt katalogu przez API.",
-        "Zapytanie kończy się bez błędu, a liczba zwróconych produktów testowych PERF-* odpowiada liczbie wygenerowanych produktów. Katalog może zawierać również dane demonstracyjne.",
+CATALOG: dict[str, TestDefinition] = {
+    "response_time": TestDefinition(
+        "6.1", "Czas odpowiedzi", "Pomiar odczytu katalogu dla rosnącej liczby produktów.",
+        "Dodaj dane PERF-* i wykonaj jedno zapytanie katalogowe dla każdego rozmiaru.",
+        "Zapytanie nie zwraca błędu i zawiera dokładnie oczekiwaną liczbę produktów PERF-*.",
     ),
-    "load": TestDescription(
-        "6.2",
-        "Test obciążenia",
-        "Sprawdzenie zachowania API przy rosnącej liczbie identycznych operacji.",
-        "Wykonanie zapytania katalogu 1, 10 i 100 razy oraz pomiar czasu całkowitego i średniego.",
-        "Wszystkie zapytania kończą się poprawnie; raport pokazuje zmianę czasu wraz z obciążeniem.",
+    "load": TestDefinition(
+        "6.2", "Test obciążenia", "Sprawdzenie stabilności API przy powtarzanych odczytach.",
+        "Wykonaj zapytanie katalogowe 1, 10 i 100 razy.",
+        "Wszystkie odpowiedzi są poprawne; raport zawiera czas całkowity i średni.",
     ),
-    "consistency": TestDescription(
-        "6.3",
-        "Spójność danych",
-        "Sprawdzenie replikacji katalogu oraz lokalności stanów magazynowych.",
-        "Utworzenie produktu w obu bazach, zmiana magazynu Katowic i odczyt obu oddziałów.",
-        "Produkt jest widoczny w obu bazach, ale zmiana magazynu Katowic nie zmienia magazynu Krakowa.",
+    "consistency": TestDefinition(
+        "6.3", "Spójność danych", "Sprawdzenie replikacji katalogu i lokalności magazynu.",
+        "Utwórz produkt, zmień stan Katowic i odczytaj oba oddziały.",
+        "Katalog jest w obu bazach, a zmieniony stan występuje wyłącznie w Katowicach.",
     ),
-    "failure": TestDescription(
-        "6.4",
-        "Test awarii",
-        "Sprawdzenie działania systemu po wyłączeniu bazy Krakowa.",
-        "Zatrzymanie kontenera PostgreSQL Kraków, odczyt danych Katowic, ponowne uruchomienie i odczyt obu węzłów.",
-        "Dane Katowic są dostępne podczas awarii; po restarcie Krakowa system wraca do działania.",
+    "failure": TestDefinition(
+        "6.4", "Test awarii", "Sprawdzenie dostępności Katowic przy awarii Krakowa.",
+        "Zatrzymaj PostgreSQL Kraków, wykonaj odczyty, uruchom go ponownie i sprawdź odzyskanie.",
+        "Katowice pozostają dostępne podczas awarii, a oba węzły działają po restarcie.",
     ),
-    "scalability": TestDescription(
-        "6.5",
-        "Skalowalność",
-        "Ocena wpływu wzrostu liczby danych na czas odpowiedzi API.",
-        "Porównanie pomiarów dla 100, 1 000 i 10 000 rekordów.",
-        "Raport pokazuje trend czasu odpowiedzi i pozwala ocenić wpływ rozmiaru danych.",
+    "scalability": TestDefinition(
+        "6.5", "Skalowalność", "Porównanie czasu odczytu dla rosnącego wolumenu danych.",
+        "Dodaj 100, 1 000 i 10 000 produktów oraz zmierz odczyt katalogu.",
+        "Raport pokazuje czasy dla każdego rozmiaru bez błędów API.",
     ),
 }

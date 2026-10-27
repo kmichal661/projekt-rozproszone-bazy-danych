@@ -6,6 +6,7 @@ COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend ./backend
+COPY Tests ./Tests
 
 EXPOSE 8000
 
