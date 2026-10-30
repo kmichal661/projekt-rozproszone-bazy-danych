@@ -81,6 +81,7 @@ services:
 
   postgres_katowice:
     image: postgres:16-alpine
+    command: ["postgres", "-c", "max_prepared_transactions=10"]
     container_name: distributed-store-postgres-katowice
     environment:
       POSTGRES_DB: sklep_katowice
@@ -99,6 +100,7 @@ services:
 
   postgres_krakow:
     image: postgres:16-alpine
+    command: ["postgres", "-c", "max_prepared_transactions=10"]
     container_name: distributed-store-postgres-krakow
     environment:
       POSTGRES_DB: sklep_krakow

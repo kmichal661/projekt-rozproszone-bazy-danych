@@ -1,6 +1,9 @@
 import graphene
 from pony.orm import db_session, flush
 
+from .catalog_transaction import create_product as create_product_2pc
+from .catalog_transaction import deactivate_product as deactivate_product_2pc
+from .catalog_transaction import enabled as two_phase_commit_enabled
 from .models import NODES, get_node
 
 
@@ -62,6 +65,14 @@ class CreateProduct(graphene.Mutation):
 
     @staticmethod
     def mutate(root, info, product):
+        if two_phase_commit_enabled():
+            created = create_product_2pc(product)
+            return CreateProduct(
+                ok=True,
+                message="Produkt zapisano atomowo w obu węzłach (PostgreSQL 2PC)",
+                product=ProductPayload(**created),
+            )
+
         # Check both replicas before any write, then retain one transaction
         # for every replica so an outage cannot leave a partial catalog.
         with db_session:
@@ -182,6 +193,13 @@ class DeleteProduct(graphene.Mutation):
 
     @staticmethod
     def mutate(root, info, sku):
+        if two_phase_commit_enabled():
+            deactivate_product_2pc(sku)
+            return DeleteProduct(
+                ok=True,
+                message="Produkt oznaczono jako nieaktywny atomowo w obu węzłach (PostgreSQL 2PC)",
+            )
+
         # Do all reads before the first update.  Thus an unavailable replica
         # makes the mutation fail without changing the reachable replica.
         with db_session:

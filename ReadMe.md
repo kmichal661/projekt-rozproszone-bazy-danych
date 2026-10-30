@@ -70,13 +70,13 @@ Identyfikator węzła w mutacjach `updateInventory` i `createOrder` jest obowią
 
 Replikowany jest wyłącznie katalog produktów (`products`). Magazyn (`inventory`) oraz zamówienia (`orders`, `order_items`) są danymi lokalnymi i nie podlegają replikacji.
 
-Synchronizacja katalogu odbywa się **synchronicznie w warstwie aplikacji**, podczas obsługi mutacji, a nie przez replikację PostgreSQL ani proces działający w tle:
+Synchronizacja katalogu odbywa się **synchronicznie w warstwie aplikacji** z użyciem rozproszonej transakcji dwufazowej PostgreSQL (2PC), podczas obsługi mutacji, a nie przez replikację PostgreSQL ani proces działający w tle:
 
 1. `createProduct` sprawdza dostępność obu baz i zapisuje produkt oraz zerowy stan magazynowy w każdej z nich.
 2. `deleteProduct` najpierw odczytuje produkt z obu baz, a potem ustawia `active=false` w obu replikach.
 3. `updateInventory` i `createOrder` zapisują dane tylko w węźle przekazanym w parametrze `node`.
 
-Nie ma kolejki zmian, okresowej synchronizacji ani automatycznego mechanizmu naprawy rozbieżności. Zapis katalogu wymaga dostępności obu węzłów; jeśli baza jest niedostępna przed rozpoczęciem zapisu, mutacja zwraca błąd i nie powinna modyfikować dostępnej repliki. Implementacja nie stosuje jednak rozproszonej transakcji dwufazowej, dlatego awaria występująca w trakcie zatwierdzania zapisu wymaga kontroli zgodności replik po odzyskaniu połączenia.
+Najpierw obie lokalne transakcje przechodzą do stanu `PREPARE TRANSACTION`. Gdy przygotowanie powiedzie się w obu bazach, API trwale zapisuje decyzję `commit`, a następnie wykonuje `COMMIT PREPARED` na obu węzłach. Awaria przed podjęciem decyzji powoduje wycofanie przygotowanych transakcji; awaria po decyzji `commit` nie może pozostawić katalogu częściowo zatwierdzonego — API kończy pozostały `COMMIT PREPARED` po restarcie lub przed kolejną zmianą katalogu. Wymaga to `max_prepared_transactions=10`, ustawionego w `docker-compose.yml`.
 
 ## Zachowanie przy utracie połączenia
 
@@ -84,7 +84,7 @@ Nie ma kolejki zmian, okresowej synchronizacji ani automatycznego mechanizmu nap
 |---|---|---|
 | Niedostępny Kraków | `products` i zapytania z `node: "KATOWICE"` pozostają dostępne. Zapytanie bez filtra węzła, które wymaga odczytu obu baz, może zwrócić błąd. | Po restarcie bazy aplikacja ponownie korzysta z węzła; seed można uruchomić dla brakujących danych demonstracyjnych. |
 | Niedostępne Katowice | API pozostaje uruchomione, ale `products` jest niedostępne, bo ta replika obsługuje ten odczyt. Operacje jawnie wskazujące Kraków mogą działać, o ile nie wymagają zapisu katalogu. | Przywróć bazę Katowic i zweryfikuj zgodność katalogu. |
-| Niedostępny dowolny węzeł podczas `createProduct`/`deleteProduct` | Zapis katalogu jest odrzucany; system nie przełącza go na drugi węzeł ani nie odkłada go do późniejszego wykonania. | Powtórzyć mutację po odzyskaniu połączenia; po awarii w trakcie zatwierdzania porównać repliki. |
+| Niedostępny dowolny węzeł podczas `createProduct`/`deleteProduct` | Przed trwałą decyzją zapis jest wycofywany. Po trwałej decyzji `commit` API dokańcza przygotowaną transakcję po odzyskaniu węzła; w tym czasie kolejna zmiana katalogu jest wstrzymana. | Przywrócić węzeł; automatyczne odzyskiwanie dokończy `COMMIT PREPARED` albo wycofa zapis bez decyzji commit. |
 | Utrata połączenia z `api` | Klienci nie mają dostępu do GraphQL, mimo że bazy mogą nadal działać. | Uruchomić ponownie kontener `api`; dane pozostają w wolumenach PostgreSQL. |
 
 ## Wymagania niefunkcjonalne i kryteria weryfikacji
