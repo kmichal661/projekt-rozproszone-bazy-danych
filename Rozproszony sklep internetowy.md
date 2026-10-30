@@ -49,6 +49,19 @@ Dostęp do baz zrealizowano przez mapowanie obiektowo-relacyjne (PonyORM). Aplik
 
 Technologie: Python 3.11, Starlette, Uvicorn, Graphene (GraphQL), PonyORM, PostgreSQL 16, Docker Compose.
 
+### 1.7. Rola serwera głównego i zachowanie przy awarii
+
+Serwer główny to usługa `api`. Jest wspólnym punktem wejścia dla klientów i **koordynatorem dostępu do danych**, a nie centralną bazą danych: nie przechowuje katalogu, stanów magazynowych ani zamówień. Przyjmuje żądania GraphQL, waliduje je, wybiera węzeł wskazany parametrem `node` dla operacji lokalnych oraz koordynuje zapis katalogu do obu replik. Dane biznesowe są trwale przechowywane wyłącznie w niezależnych bazach `postgres_katowice` i `postgres_krakow`.
+
+| Sytuacja awaryjna | Zachowanie systemu |
+| --- | --- |
+| Niedostępny Kraków | Odczyt katalogu (z Katowic), `inventory(node: "KATOWICE")` oraz zamówienia w Katowicach pozostają dostępne. Operacje dotyczące Krakowa i odczyty bez parametru `node`, wymagające obu węzłów, zwracają błąd. |
+| Niedostępne Katowice | API działa, lecz odczyt `products` jest niedostępny, ponieważ katalog jest obecnie odczytywany z repliki Katowic. Lokalne operacje w Krakowie mogą działać, jeśli nie wymagają zapisu katalogu. |
+| Niedostępny dowolny węzeł podczas zmiany katalogu | `createProduct` i `deleteProduct` są odrzucane; system nie zapisuje zmiany tylko w dostępnym węźle i nie kolejkuje jej do późniejszego wykonania. |
+| Niedostępne `api` | Klient nie ma dostępu do GraphQL, choć dane w obu bazach pozostają zachowane. Po ponownym uruchomieniu usługi API dostęp wraca. |
+
+Po odzyskaniu połączenia aplikacja ponownie korzysta z uruchomionego węzła, a dane zapisane w jego wolumenie PostgreSQL pozostają dostępne. Nie ma automatycznej kolejki ani procesu uzgadniania katalogu; po awarii występującej w trakcie zatwierdzania zapisu należy porównać repliki. Szczegółowy przebieg scenariusza awarii i jego wyniki przedstawia sekcja 10.4.
+
 ## 2. Wymagania
 
 ### 2.1. Wymagania funkcjonalne
