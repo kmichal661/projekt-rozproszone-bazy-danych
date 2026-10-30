@@ -1,8 +1,3 @@
-"""Infrastructure adapters used by test scenarios.
-
-Scenarios depend on these small adapters instead of urllib and Docker details.
-"""
-
 from __future__ import annotations
 
 import json

@@ -1,5 +1,3 @@
-"""Command-line entry point for the integration-test report."""
-
 from __future__ import annotations
 
 import argparse

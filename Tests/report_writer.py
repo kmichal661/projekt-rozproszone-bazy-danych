@@ -1,5 +1,3 @@
-"""Report persistence and HTML presentation."""
-
 from __future__ import annotations
 
 import csv

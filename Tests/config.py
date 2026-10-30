@@ -1,5 +1,3 @@
-"""Central configuration for the integration test suite."""
-
 from __future__ import annotations
 
 import os

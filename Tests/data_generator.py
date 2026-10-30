@@ -1,5 +1,3 @@
-"""PostgreSQL test-data lifecycle, isolated by SKU prefixes."""
-
 from __future__ import annotations
 
 from contextlib import closing

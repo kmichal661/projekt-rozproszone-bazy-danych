@@ -1,5 +1,3 @@
-"""Reusable benchmark scenario for catalog reads."""
-
 from __future__ import annotations
 
 from .common import GraphQLClient, products_query

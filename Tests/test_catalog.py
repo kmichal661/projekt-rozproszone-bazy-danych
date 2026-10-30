@@ -1,5 +1,3 @@
-"""Human-readable definitions of the scenarios included in the report."""
-
 from .test_models import TestDefinition
 
 

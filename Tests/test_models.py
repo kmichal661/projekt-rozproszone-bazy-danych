@@ -1,5 +1,3 @@
-"""Small, serialisable domain models shared by every test scenario."""
-
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
